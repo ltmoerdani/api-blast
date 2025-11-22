@@ -3,8 +3,9 @@ var config = {
 	database: {
 	    connectionLimit: 500,
 	    host: "localhost",
-	    user: "myarchery",
-	    password: "dLsN5KPGaSbFaebz",
+	    port: 3306,
+	    user: "root",
+	    password: "",
 	    database: "blast",
 	    charset : "utf8mb4",
 	    debug: false,

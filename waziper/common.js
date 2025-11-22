@@ -1,4 +1,4 @@
-const mysql = require('mysql');
+const mysql = require('mysql2');
 const config = require("./../config.js");
 const moment = require('moment-timezone');
 const db_connect = mysql.createPool(config.database);
@@ -34,7 +34,6 @@ const Common = {
 
 		return res;
 	},
-
 	db_get: async function(table, data){
 		var query = "SELECT * FROM "+table+" ";
 		var where = "";
@@ -52,12 +51,19 @@ const Common = {
 			query = query + " WHERE " + where;
 		}
 
+		console.log("Executing query:", query, "with data:", data);
+
 		var res = await new Promise( async (resolve, reject)=> {
 	        db_connect.query(query , data, (err, res)=>{
+	        	if (err) {
+	        		console.error("Database query error:", err);
+	        		return resolve(false);
+	        	}
 	            return resolve(res);
 	        });
 	    });
 
+	    console.log("Query raw result:", res);
 		return Common.response(res, true);
 	},
 

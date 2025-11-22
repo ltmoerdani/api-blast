@@ -54,62 +54,65 @@ const WAZIPER = {
 	app: app,
 	server: server,
 	cors: cors(config.cors),
-
 	makeWASocket: async function(instance_id){
-		const { state, saveCreds } = await useMultiFileAuthState('sessions/'+instance_id);
+		try {
+			console.log("Creating WhatsApp socket for instance:", instance_id);
+			const { state, saveCreds } = await useMultiFileAuthState('sessions/'+instance_id);
 
-		const WA = makeWASocket({ 
-			connectTimeoutMs: 999999999,
-		    defaultQueryTimeoutMs: 999999999,
-		    auth: state,
-			printQRInTerminal: false,
-			logger: P({ level: 'silent' }),
-			receivedPendingNotifications: true,
-			defaultQueryTimeoutMs: undefined,
-			browser: [instance_id,'Chrome','96.0.4664.110'],
-			patchMessageBeforeSending: (message) => {
-	            const requiresPatch = !!(
-	                message.buttonsMessage ||
-	                // || message.templateMessage
-	                message.listMessage
-	            );
-	            if (requiresPatch) {
-	                message = {
-	                    viewOnceMessage: {
-	                        message: {
-	                            messageContextInfo: {
-	                                deviceListMetadataVersion: 2,
-	                                deviceListMetadata: {},
-	                            },
-	                            ...message,
-	                        },
-	                    },
-	                };
-	            }
-	            return message;
-	        },
-		});
+			const WA = makeWASocket({ 
+				connectTimeoutMs: 999999999,
+			    defaultQueryTimeoutMs: 999999999,
+			    auth: state,
+				printQRInTerminal: false,
+				logger: P({ level: 'silent' }),
+				receivedPendingNotifications: true,
+				defaultQueryTimeoutMs: undefined,
+				browser: [instance_id,'Chrome','96.0.4664.110'],
+				patchMessageBeforeSending: (message) => {
+		            const requiresPatch = !!(
+		                message.buttonsMessage ||
+		                // || message.templateMessage
+		                message.listMessage
+		            );
+		            if (requiresPatch) {
+		                message = {
+		                    viewOnceMessage: {
+		                        message: {
+		                            messageContextInfo: {
+		                                deviceListMetadataVersion: 2,
+		                                deviceListMetadata: {},
+		                            },
+		                            ...message,
+		                        },
+		                    },
+		                };
+		            }
+		            return message;
+		        },
+			});
 
+			console.log("WhatsApp socket created successfully for instance:", instance_id);
 		await WA.ev.on('connection.update', async ( { connection, lastDisconnect, isNewLogin, qr, receivedPendingNotifications } ) => {
 			/*
 			* Get QR COde
 			*/
 			if(qr != undefined){
 				WA.qrcode = qr;
+				console.log("QR Code generated for instance:", instance_id);
 				if(new_sessions[instance_id] == undefined)
 					new_sessions[instance_id] = new Date().getTime()/1000 + 300;
 			}
 
 			/*
-			* Login successful
+			* Login successful - Remove recursive call
 			*/
 			if(isNewLogin){
-
-				/*
-				* Reload session after login successful
-				*/
-				await WAZIPER.makeWASocket(instance_id);
-
+				console.log("New login detected for instance:", instance_id);
+				// Remove QR code after successful login
+				if(WA.qrcode) {
+					WA.qrcode = false;
+				}
+				// Don't create new socket here - causes infinite loop
 			}
 
 			if(lastDisconnect != undefined && lastDisconnect.error != undefined){
@@ -166,9 +169,7 @@ const WAZIPER = {
 		                    await WAZIPER.session(instance_id);
 				    	}
 			    	}
-			    	break;
-
-			    case "open":
+			    	break;			    case "open":
 			    	// Reload WASocket
 			    	console.log("OPEN", "STEP 1", WA.user);
 
@@ -180,10 +181,11 @@ const WAZIPER = {
 
 			    	sessions[instance_id] = WA;
 
-					// Remove QR code
+					// Remove QR code after successful connection
 			    	if(sessions[instance_id].qrcode != undefined){
-			    		delete sessions[instance_id].qrcode; 
+			    		sessions[instance_id].qrcode = false; // Set to false instead of delete
 			    		delete new_sessions[instance_id];
+			    		console.log("QR code cleared for connected instance:", instance_id);
 			    	}
 
 
@@ -276,10 +278,13 @@ const WAZIPER = {
 		await WA.ev.on('groups.update', async(group) => {
 			WAZIPER.webhook(instance_id, { event: "groups.update", data:group  });
 		});
-
 		await WA.ev.on('creds.update', saveCreds);
 
 		return WA;
+		} catch (error) {
+			console.error("Error creating WhatsApp socket for instance", instance_id, ":", error);
+			throw error;
+		}
 	},
 
 	session: async function(instance_id, reset){
@@ -289,70 +294,75 @@ const WAZIPER = {
 
 		return sessions[instance_id];
 	},
-
-	instance: async function(access_token, instance_id, login, res, callback){
+	instance: async function(access_token, instance_id, login, res, callback, bypass_license = false){
 		var time_now = Math.floor(new Date().getTime() / 1000);
 
-		if(verify_next < time_now){
-			var options = await Common.db_query(`SELECT value FROM sp_options WHERE name = 'base_url'`);
-			if(!options){
-				if(res){
-	            	return res.json({ status: 'error', message: "Whoop! The license provided is not valid, please contact the author for assistance" });
-	            }else{
-	            	return callback(false);
-	            }
-			}
+		// Bypass license check for development/testing
+		if (bypass_license) {
+			console.log("⚠️  License check bypassed for development/testing");
+			verified = true;
+		} else {
+			if(verify_next < time_now){
+				var options = await Common.db_query(`SELECT value FROM sp_options WHERE name = 'base_url'`);
+				if(!options){
+					if(res){
+		            	return res.json({ status: 'error', message: "Whoop! The license provided is not valid, please contact the author for assistance" });
+		            }else{
+		            	return callback(false);
+		            }
+				}
 
-			var base_url = options.value
-			var license = await Common.db_query(`SELECT * FROM sp_purchases WHERE item_id = '32290038' OR item_id = '32399061'`);
-			if(!license){
-				if(res){
-	            	return res.json({ status: 'error', message: "Whoop!!The license provided is not valid, please contact the author for assistance" });
-	            }else{
-	            	return callback(false);
-	            }
-			}
+				var base_url = options.value
+				var license = await Common.db_query(`SELECT * FROM sp_purchases WHERE item_id = '32290038' OR item_id = '32399061'`);
+				if(!license){
+					if(res){
+		            	return res.json({ status: 'error', message: "Whoop!!The license provided is not valid, please contact the author for assistance" });
+		            }else{
+		            	return callback(false);
+		            }
+				}
 
-			var ip = await publicIp.address();
-			var check_license = await new Promise( async (resolve, reject)=>{
-				axios.get('https://stackposts.com/api/check?purchase_code='+license.purchase_code+'&website='+base_url+'&ip='+ip)
-			    .then((response) => {
-			        if (response.status === 200) {
-			        	verify_response = response.data;
-			        	verified = false;
-			            return resolve(response.data);
-			        }else{
-			        	verified = true;
-			        	return resolve(false);
-			        }
-			    })
-			    .catch((err) => {
-			    	verified = true;
-			        return resolve(false);
+				var ip = await publicIp.address();
+				var check_license = await new Promise( async (resolve, reject)=>{
+					axios.get('https://stackposts.com/api/check?purchase_code='+license.purchase_code+'&website='+base_url+'&ip='+ip)
+				    .then((response) => {
+				        if (response.status === 200) {
+				        	verify_response = response.data;
+				        	verified = false;
+				            return resolve(response.data);
+				        }else{
+				        	verified = true;
+				        	return resolve(false);
+				        }
+				    })
+				    .catch((err) => {
+				    	verified = true;
+				        return resolve(false);
+				    });
 			    });
-		    });
-		}
+			}
 
-		if(verify_next < time_now){
-			verify_next = time_now + 600;
-		}
+			if(verify_next < time_now){
+				verify_next = time_now + 600;
+			}
 
-		if (verify_response) {
-			if(verify_response.status == "error"){
+			if (verify_response) {
+				if(verify_response.status == "error"){
+					if(res){
+			        	return res.json({ status: 'error', message: verify_response.message });
+			        }else{
+			        	return callback(false);
+			        }
+				}
+			}
+
+			if (!verified) {
 				if(res){
-		        	return res.json({ status: 'error', message: verify_response.message });
+		        	return res.json({ status: 'error', message: "Whoop!!! The license provided is not valid, please contact the author for assistance" });
 		        }else{
 		        	return callback(false);
 		        }
 			}
-		}
-
-		if (!verified) {
-			if(res){
-	        	return res.json({ status: 'error', message: "Whoop!!! The license provided is not valid, please contact the author for assistance" });
-	        }else{
-	        	return callback(false);
-	        }
 		}
 
 		if(instance_id == undefined && res != undefined){
@@ -362,10 +372,11 @@ const WAZIPER = {
 	        	return callback(false);
 	        }
 		}
-
 		var team = await Common.db_get("sp_team", [{ids: access_token}]);
+		console.log("Team lookup result:", team);
 
         if(!team){
+        	console.log("Team not found for access_token:", access_token);
         	if(res){
 	        	return res.json({ status: 'error', message: "The authentication process has failed" });
 	        }else{
@@ -374,8 +385,10 @@ const WAZIPER = {
         }
 
         var session = await Common.db_get("sp_whatsapp_sessions", [ { instance_id: instance_id }, { team_id: team.id } ]);
+        console.log("Session lookup result:", session);
 
         if(!session){
+            console.log("Session not found for instance_id:", instance_id, "team_id:", team.id);
             Common.db_update("sp_accounts", [ { status: 0 }, { token: instance_id } ]);
             
         	if(res){
@@ -408,30 +421,40 @@ const WAZIPER = {
 			}
 		}
 	},
-
 	get_qrcode: async function(instance_id, res){
 		var client = sessions[instance_id];
 		if(client == undefined){
 			return res.json({ status: 'error', message: "The WhatsApp session could not be found in the system" });
 		}
 
-		if(client.qrcode != undefined && !client.qrcode){
+		// Fix: Improve QR code validation logic
+		if(client.qrcode === false){
 			return res.json({ status: 'error', message: "It seems that you have logged in successfully" });
 		}
 
-		//Check QR code exist
-		for( var i = 0; i < 10; i++) { 
+		//Check QR code exist - Increase timeout to 30 seconds
+		console.log("Waiting for QR code generation for instance:", instance_id);
+		for( var i = 0; i < 30; i++) { 
 			if( client.qrcode == undefined ){
 		    	await Common.sleep(1000);
+			} else {
+				break; // Exit loop when QR code is available
 			}
 		}
 
 		if(client.qrcode == undefined || client.qrcode == false){
-			return res.json({ status: 'error', message: "The system cannot generate a WhatsApp QR code" });
+			console.log("Failed to generate QR code for instance:", instance_id);
+			return res.json({ status: 'error', message: "The system cannot generate a WhatsApp QR code. Please try again." });
 		}
 
-		var code = qrimg.imageSync(client.qrcode, { type: 'png' });
-    	return res.json({ status: 'success', message: 'Success', base64: 'data:image/png;base64,'+code.toString('base64') });
+		try {
+			var code = qrimg.imageSync(client.qrcode, { type: 'png' });
+			console.log("QR code successfully generated for instance:", instance_id);
+	    	return res.json({ status: 'success', message: 'Success', base64: 'data:image/png;base64,'+code.toString('base64') });
+		} catch (error) {
+			console.error("Error generating QR code image:", error);
+			return res.json({ status: 'error', message: "Failed to generate QR code image" });
+		}
 	},
 
 	get_info: async function(instance_id, res){

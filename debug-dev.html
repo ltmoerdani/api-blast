@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp QR Code Debug Tool (License Bypassed)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .bypass-notice {
+            background-color: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #856404;
+        }
+        .bypass-notice h3 {
+            margin: 0 0 10px 0;
+            color: #856404;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        input[type="text"]:focus {
+            border-color: #25D366;
+            outline: none;
+        }
+        .btn {
+            background-color: #25D366;
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #128C7E;
+        }
+        .btn-secondary {
+            background-color: #34495e;
+        }
+        .btn-secondary:hover {
+            background-color: #2c3e50;
+        }
+        .btn-danger {
+            background-color: #e74c3c;
+        }
+        .btn-danger:hover {
+            background-color: #c0392b;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            min-height: 50px;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .loading {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+        .qr-container {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .qr-code {
+            max-width: 300px;
+            border: 3px solid #25D366;
+            border-radius: 10px;
+            margin: 20px auto;
+            display: block;
+        }
+        .debug-info {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+        }
+        .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            color: #25D366;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #333;
+            border-bottom: 2px solid #25D366;
+            padding-bottom: 10px;
+        }
+        .instruction {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔓 WhatsApp QR Code Debug Tool (Development Mode)</h1>
+        
+        <div class="bypass-notice">
+            <h3>⚠️ License Check Bypassed</h3>
+            <p>Tool ini menggunakan endpoint development yang mem-bypass license validation. Gunakan hanya untuk testing dan development.</p>
+        </div>
+        
+        <div class="instruction">
+            <strong>Instruksi Development Mode:</strong>
+            <ol>
+                <li>Tool ini menggunakan endpoint <code>*_dev</code> yang bypass license</li>
+                <li>Masukkan Access Token dan Instance ID</li>
+                <li>Klik "Debug Status" untuk mengecek kondisi session</li>
+                <li>Klik "Generate QR Code" untuk mendapatkan QR code</li>
+                <li>Jika bermasalah, gunakan "Reset Session" terlebih dahulu</li>
+            </ol>
+        </div>
+
+        <div class="form-group">
+            <label for="baseUrl">Base URL API:</label>
+            <input type="text" id="baseUrl" value="http://localhost:8000" placeholder="http://localhost:8000">
+        </div>
+
+        <div class="form-group">
+            <label for="accessToken">Access Token:</label>
+            <input type="text" id="accessToken" value="65a803966258e" placeholder="65a803966258e">
+        </div>
+
+        <div class="form-group">
+            <label for="instanceId">Instance ID:</label>
+            <input type="text" id="instanceId" value="675AAEEF1ED2D" placeholder="675AAEEF1ED2D">
+        </div>
+
+        <div class="button-group">
+            <button class="btn" onclick="debugStatus()">🔍 Debug Status (Dev)</button>
+            <button class="btn" onclick="generateQR()">📱 Generate QR Code (Dev)</button>
+            <button class="btn btn-secondary" onclick="getInfo()">ℹ️ Get Info (Original)</button>
+            <button class="btn btn-danger" onclick="resetSession()">🔄 Reset Session (Dev)</button>
+        </div>
+
+        <div id="result" class="result" style="display: none;"></div>
+
+        <div class="qr-container" id="qrContainer" style="display: none;">
+            <h2>📱 Scan QR Code dengan WhatsApp</h2>
+            <img id="qrImage" class="qr-code" src="" alt="QR Code">
+            <p><strong>Petunjuk:</strong> Buka WhatsApp → Menu (⋮) → Linked Devices → Link a Device → Scan QR Code ini</p>
+        </div>
+
+        <div id="debugInfo" class="debug-info" style="display: none;"></div>
+    </div>
+
+    <script>
+        const baseUrlInput = document.getElementById('baseUrl');
+        const accessTokenInput = document.getElementById('accessToken');
+        const instanceIdInput = document.getElementById('instanceId');
+        const resultDiv = document.getElementById('result');
+        const qrContainer = document.getElementById('qrContainer');
+        const qrImage = document.getElementById('qrImage');
+        const debugInfoDiv = document.getElementById('debugInfo');
+
+        function showResult(message, type = 'loading') {
+            resultDiv.className = `result ${type}`;
+            resultDiv.innerHTML = message;
+            resultDiv.style.display = 'block';
+        }
+
+        function showDebugInfo(data) {
+            debugInfoDiv.innerHTML = JSON.stringify(data, null, 2);
+            debugInfoDiv.style.display = 'block';
+        }
+
+        function hideQR() {
+            qrContainer.style.display = 'none';
+        }
+
+        function showQR(base64Image) {
+            qrImage.src = base64Image;
+            qrContainer.style.display = 'block';
+        }
+
+        function getApiUrl(endpoint) {
+            const baseUrl = baseUrlInput.value.trim();
+            const accessToken = accessTokenInput.value.trim();
+            const instanceId = instanceIdInput.value.trim();
+            
+            if (!baseUrl || !accessToken || !instanceId) {
+                showResult('❌ Harap isi semua field yang diperlukan!', 'error');
+                return null;
+            }
+            
+            return `${baseUrl}${endpoint}?access_token=${encodeURIComponent(accessToken)}&instance_id=${encodeURIComponent(instanceId)}`;
+        }
+
+        async function makeRequest(url, method = 'GET') {
+            try {
+                showResult('⏳ Mengirim request (license bypassed)...', 'loading');
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                showDebugInfo({
+                    url: url,
+                    method: method,
+                    response: data,
+                    timestamp: new Date().toISOString(),
+                    license_bypassed: true
+                });
+                
+                return data;
+            } catch (error) {
+                showResult(`❌ Network Error: ${error.message}`, 'error');
+                showDebugInfo({
+                    url: url,
+                    method: method,
+                    error: error.message,
+                    timestamp: new Date().toISOString(),
+                    license_bypassed: true
+                });
+                return null;
+            }
+        }
+
+        async function debugStatus() {
+            hideQR();
+            const url = getApiUrl('/debug_qr_status_dev');
+            if (!url) return;
+            
+            const data = await makeRequest(url);
+            if (data) {
+                if (data.status === 'success') {
+                    const debug = data.debug_info;
+                    let statusIcon = '🔴';
+                    let statusText = 'Offline';
+                    
+                    if (debug.has_client && debug.user_info === 'Logged in') {
+                        statusIcon = '🟢';
+                        statusText = 'Online & Logged In';
+                    } else if (debug.has_client) {
+                        statusIcon = '🟡';
+                        statusText = 'Connected (Waiting for Login)';
+                    }
+                    
+                    showResult(`
+                        ${statusIcon} <strong>Status: ${statusText}</strong><br>
+                        📱 Has Client: ${debug.has_client ? '✅' : '❌'}<br>
+                        🔗 QR Code: ${debug.qrcode_value}<br>
+                        👤 User Info: ${debug.user_info}<br>
+                        🌐 Connection: ${debug.connection_state}<br>
+                        🔓 License: Bypassed ✅
+                    `, debug.has_client ? 'success' : 'error');
+                } else {
+                    showResult(`❌ Error: ${data.message}`, 'error');
+                }
+            }
+        }
+
+        async function generateQR() {
+            hideQR();
+            const url = getApiUrl('/get_qrcode_dev');
+            if (!url) return;
+            
+            const data = await makeRequest(url);
+            if (data) {
+                if (data.status === 'success' && data.base64) {
+                    showResult('✅ QR Code berhasil dibuat (license bypassed)! Silakan scan dengan WhatsApp.', 'success');
+                    showQR(data.base64);
+                } else {
+                    showResult(`❌ Error: ${data.message || 'Gagal generate QR code'}`, 'error');
+                    
+                    // Tampilkan saran solusi
+                    if (data.message && data.message.includes('logged in')) {
+                        showResult(`❌ ${data.message}<br><br>💡 <strong>Solusi:</strong> Akun sudah login. Gunakan "Get Info" untuk melihat detail atau "Reset Session" untuk logout.`, 'error');
+                    } else if (data.message && data.message.includes('cannot generate')) {
+                        showResult(`❌ ${data.message}<br><br>💡 <strong>Solusi:</strong> Coba "Reset Session" terlebih dahulu, tunggu 2-3 detik, lalu generate QR code lagi.`, 'error');
+                    }
+                }
+            }
+        }
+
+        async function getInfo() {
+            hideQR();
+            const url = getApiUrl('/instance');  // Use original endpoint
+            if (!url) return;
+            
+            const data = await makeRequest(url);
+            if (data) {
+                if (data.status === 'success' && data.data) {
+                    const info = data.data;
+                    showResult(`
+                        ✅ <strong>Account Info:</strong><br>
+                        📱 ID: ${info.id}<br>
+                        👤 Name: ${info.name}<br>
+                        📞 Phone: ${info.id.replace('@s.whatsapp.net', '')}<br>
+                        🖼️ Avatar: ${info.avatar ? '✅' : '❌'}<br>
+                        ⚠️ Note: Original endpoint (license required)
+                    `, 'success');
+                } else {
+                    showResult(`❌ Error: ${data.message || 'Gagal mendapatkan info account'}<br>⚠️ Note: Original endpoint (license required)`, 'error');
+                    
+                    if (data.relogin) {
+                        showResult(`❌ ${data.message}<br><br>💡 <strong>Solusi:</strong> Perlu login ulang. Generate QR code terlebih dahulu.`, 'error');
+                    }
+                }
+            }
+        }
+
+        async function resetSession() {
+            hideQR();
+            const url = getApiUrl('/reset_session_dev');
+            if (!url) return;
+            
+            const data = await makeRequest(url, 'POST');
+            if (data) {
+                if (data.status === 'success') {
+                    showResult(`✅ ${data.message}<br><br>⏳ Tunggu 2-3 detik, lalu coba generate QR code lagi.`, 'success');
+                } else {
+                    showResult(`❌ Error: ${data.message}`, 'error');
+                }
+            }
+        }
+
+        // Test connectivity on page load
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                showResult('🚀 Development debug tool siap digunakan (license bypassed). Mulai dengan "Debug Status" untuk mengecek kondisi session.', 'loading');
+            }, 500);
+        });
+    </script>
+</body>
+</html>
