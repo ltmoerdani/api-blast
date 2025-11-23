@@ -30,12 +30,13 @@ function makeApiRequest($endpoint, $params = [], $method = 'GET') {
     
     if ($method === 'POST') {
         curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($params));
     }
     
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $error = curl_error($ch);
-    curl_close($ch);
+    unset($ch); // Replaces deprecated curl_close()
     
     if ($error) {
         return [
@@ -46,6 +47,17 @@ function makeApiRequest($endpoint, $params = [], $method = 'GET') {
     }
     
     $data = json_decode($response, true);
+    
+    // Handle JSON decode error
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        return [
+            'status' => 'error',
+            'message' => 'JSON Decode Error: ' . json_last_error_msg(),
+            'http_code' => $httpCode,
+            'raw_response' => $response
+        ];
+    }
+    
     $data['http_code'] = $httpCode;
     
     return $data;
@@ -56,6 +68,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' || $_SERVER['REQUEST_METHOD'] === 'POST
     $action = $_GET['action'] ?? '';
     $access_token = $_GET['access_token'] ?? $DEFAULT_ACCESS_TOKEN;
     $instance_id = $_GET['instance_id'] ?? $DEFAULT_INSTANCE_ID;
+    
+    // For POST requests, also check POST data
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $post_data = json_decode(file_get_contents('php://input'), true);
+        if ($post_data) {
+            $action = $post_data['action'] ?? $action;
+            $access_token = $post_data['access_token'] ?? $access_token;
+            $instance_id = $post_data['instance_id'] ?? $instance_id;
+        }
+    }
     
     if (empty($access_token) || empty($instance_id)) {
         echo json_encode([

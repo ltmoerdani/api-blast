@@ -3,26 +3,26 @@ const path = require('path');
 
 // Route untuk debug tool HTML
 WAZIPER.app.get('/debug-qr.html', WAZIPER.cors, (req, res) => {
-    res.sendFile(path.join(__dirname, 'debug-qr.html'));
+    res.sendFile(path.join(__dirname, 'debug-tools', 'debug-qr.html'));
 });
 
 // Route untuk debug tool page
 WAZIPER.app.get('/debug', WAZIPER.cors, (req, res) => {
-    res.sendFile(path.join(__dirname, 'debug-qr.html'));
+    res.sendFile(path.join(__dirname, 'debug-tools', 'debug-qr.html'));
 });
 
 // Route untuk development debug tool (license bypassed)
 WAZIPER.app.get('/debug-dev', WAZIPER.cors, (req, res) => {
-    res.sendFile(path.join(__dirname, 'debug-dev.html'));
+    res.sendFile(path.join(__dirname, 'debug-tools', 'debug-dev.html'));
 });
 
 WAZIPER.app.get('/debug-dev.html', WAZIPER.cors, (req, res) => {
-    res.sendFile(path.join(__dirname, 'debug-dev.html'));
+    res.sendFile(path.join(__dirname, 'debug-tools', 'debug-dev.html'));
 });
 
 // Route untuk dokumentasi
 WAZIPER.app.get('/docs', WAZIPER.cors, (req, res) => {
-    res.sendFile(path.join(__dirname, 'DEBUG_GUIDE.md'));
+    res.sendFile(path.join(__dirname, 'docs', 'DEBUG_GUIDE.md'));
 });
 
 // Route untuk list semua tools

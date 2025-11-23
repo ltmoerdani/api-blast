@@ -30,6 +30,13 @@ let verify_response = false;
 let verified = false;
 let chatbot_delay = 1000;
 
+// Connection retry management
+const retry_attempts = {};
+const MAX_RETRY_ATTEMPTS = 5;
+const BASE_RETRY_DELAY = 5000; // 5 seconds
+const MAX_RETRY_DELAY = 60000; // 1 minute
+const connection_locks = {};
+
 const io = new Server(server, {
     cors: {
         origin: '*',
@@ -60,14 +67,15 @@ const WAZIPER = {
 			const { state, saveCreds } = await useMultiFileAuthState('sessions/'+instance_id);
 
 			const WA = makeWASocket({ 
-				connectTimeoutMs: 999999999,
-			    defaultQueryTimeoutMs: 999999999,
+				connectTimeoutMs: 60000, // 60 seconds - realistic timeout
+			    defaultQueryTimeoutMs: 60000, // 60 seconds
 			    auth: state,
 				printQRInTerminal: false,
 				logger: P({ level: 'silent' }),
 				receivedPendingNotifications: true,
-				defaultQueryTimeoutMs: undefined,
+				keepaliveIntervalMs: 30000, // Keep connection alive every 30s
 				browser: [instance_id,'Chrome','96.0.4664.110'],
+				retryRequestDelayMs: 5000, // Delay between retries
 				patchMessageBeforeSending: (message) => {
 		            const requiresPatch = !!(
 		                message.buttonsMessage ||
@@ -91,19 +99,23 @@ const WAZIPER = {
 		        },
 			});
 
-			console.log("WhatsApp socket created successfully for instance:", instance_id);
-		await WA.ev.on('connection.update', async ( { connection, lastDisconnect, isNewLogin, qr, receivedPendingNotifications } ) => {
-			/*
-			* Get QR COde
-			*/
-			if(qr != undefined){
-				WA.qrcode = qr;
-				console.log("QR Code generated for instance:", instance_id);
-				if(new_sessions[instance_id] == undefined)
-					new_sessions[instance_id] = new Date().getTime()/1000 + 300;
-			}
-
-			/*
+		console.log("WhatsApp socket created successfully for instance:", instance_id);
+		
+		// Initialize retry counter
+		if (!retry_attempts[instance_id]) {
+			retry_attempts[instance_id] = 0;
+		}
+		
+	await WA.ev.on('connection.update', async ( { connection, lastDisconnect, isNewLogin, qr, receivedPendingNotifications } ) => {
+		/*
+		* Get QR COde
+		*/
+		if(qr != undefined){
+			WA.qrcode = qr;
+			console.log("QR Code generated for instance:", instance_id);
+			if(new_sessions[instance_id] == undefined)
+				new_sessions[instance_id] = new Date().getTime()/1000 + 300;
+		}			/*
 			* Login successful - Remove recursive call
 			*/
 			if(isNewLogin){
@@ -115,65 +127,99 @@ const WAZIPER = {
 				// Don't create new socket here - causes infinite loop
 			}
 
-			if(lastDisconnect != undefined && lastDisconnect.error != undefined){
-				console.log(lastDisconnect.error);
-		    	var statusCode = lastDisconnect.error.output.statusCode;
-		    	if( DisconnectReason.connectionClosed == statusCode ){
-	                //await WAZIPER.makeWASocket(instance_id);
-		    	}
-
-		    	if( DisconnectReason.restartRequired == statusCode){
-	                //sessions[instance_id] = await WAZIPER.makeWASocket(instance_id);
-		    	}
-
-		    	if( DisconnectReason.loggedOut == statusCode){
-	                await WAZIPER.logout(instance_id);
-		    	}else{
-		    		console.log("State", 1);
-		    		if(sessions[instance_id]){
-						var readyState = await WAZIPER.waitForOpenConnection(sessions[ instance_id ].ws);
-						console.log("readyState", readyState);
-					    if(readyState === 1){
-					        //sessions[ instance_id ].end();
-					    }
-
-			    		delete sessions[ instance_id ];
-			    		delete chatbots[ instance_id ];
-			    		delete bulks[ instance_id ];
-		    			sessions[instance_id] = await WAZIPER.makeWASocket(instance_id);
-		    		}else{
-		    			await WAZIPER.makeWASocket(instance_id);
-		    		}
-		    	}
+		if(lastDisconnect != undefined && lastDisconnect.error != undefined){
+			console.log("Last disconnect error:", lastDisconnect.error);
+			console.log("Last disconnect error:", lastDisconnect.error.message);
+	    	var statusCode = lastDisconnect.error.output?.statusCode || 500;
+	    	
+	    	// Handle logged out - no retry
+	    	if( DisconnectReason.loggedOut == statusCode){
+	    		console.log("Logged out, cleaning session for:", instance_id);
+	    		retry_attempts[instance_id] = 0;
+                await WAZIPER.logout(instance_id);
+                return;
 	    	}
-
-			/*
+	    	
+	    	// Handle timeout and connection errors with retry logic
+	    	if (statusCode === 408 || statusCode === 500 || lastDisconnect.error.message?.includes('ETIMEDOUT')) {
+	    		console.log("Connection timeout/error for instance:", instance_id);
+	    		
+	    		// Check retry attempts
+	    		if (retry_attempts[instance_id] >= MAX_RETRY_ATTEMPTS) {
+	    			console.error("Max retry attempts reached for:", instance_id);
+	    			retry_attempts[instance_id] = 0;
+	    			// Stop retrying and mark as failed
+	    			await WAZIPER.cleanup_session(instance_id);
+	    			return;
+	    		}
+	    		
+	    		// Calculate exponential backoff delay
+	    		const delay = Math.min(
+	    			BASE_RETRY_DELAY * Math.pow(2, retry_attempts[instance_id]),
+	    			MAX_RETRY_DELAY
+	    		);
+	    		
+	    		retry_attempts[instance_id]++;
+	    		console.log(`Connection closed, will retry with delay ${delay}ms (attempt ${retry_attempts[instance_id]}/${MAX_RETRY_ATTEMPTS})`);
+	    		
+	    		// Cleanup before retry
+	    		await WAZIPER.cleanup_session(instance_id, false);
+	    		
+	    		// Wait before retry
+	    		setTimeout(async () => {
+	    			if (!connection_locks[instance_id]) {
+	    				connection_locks[instance_id] = true;
+	    				try {
+	    					console.log("Retrying connection for:", instance_id);
+	    					sessions[instance_id] = await WAZIPER.makeWASocket(instance_id);
+	    				} catch (error) {
+	    					console.error("Error during retry:", error);
+	    				} finally {
+	    					connection_locks[instance_id] = false;
+	    				}
+	    			}
+	    		}, delay);
+	    		return;
+	    	}
+	    	
+	    	// Handle other disconnect reasons
+	    	if( DisconnectReason.connectionClosed == statusCode || DisconnectReason.restartRequired == statusCode){
+	    		console.log("Handling other disconnect reasons, status code:", statusCode);
+	    		retry_attempts[instance_id] = 0; // Reset retry counter for these cases
+	    		
+	    		await WAZIPER.cleanup_session(instance_id, false);
+	    		
+	    		// Short delay before reconnect
+	    		setTimeout(async () => {
+	    			if (!connection_locks[instance_id]) {
+	    				connection_locks[instance_id] = true;
+	    				try {
+	    					sessions[instance_id] = await WAZIPER.makeWASocket(instance_id);
+	    				} catch (error) {
+	    					console.error("Error reconnecting:", error);
+	    				} finally {
+	    					connection_locks[instance_id] = false;
+	    				}
+	    			}
+	    		}, 3000);
+	    	}
+    	}			/*
 			* Connection status
 			*/
-			switch(connection) {
-			  	case "close":
-			    	/*
-			    	* 401 Unauthorized
-			    	*/
-			    	if(lastDisconnect.error != undefined){
-				    	var statusCode = lastDisconnect.error.output.statusCode;
-				    	if( DisconnectReason.loggedOut == statusCode || 0 == statusCode){
-				    		var SESSION_PATH = session_dir + instance_id;
-							if (fs.existsSync(SESSION_PATH)) {
-		                        rimraf.sync(SESSION_PATH);
-		                        delete sessions[instance_id];
-    							delete chatbots[ instance_id ];
-    							delete bulks[ instance_id ];
-		                    }
-
-		                    await WAZIPER.session(instance_id);
-				    	}
-			    	}
-			    	break;			    case "open":
-			    	// Reload WASocket
-			    	console.log("OPEN", "STEP 1", WA.user);
-
-			    	if(WA.user.name == undefined){
+		switch(connection) {
+		  	case "close":
+		    	// Handled by lastDisconnect logic above
+		    	console.log("Connection closed for instance:", instance_id);
+		    	break;
+		    	
+		    case "open":
+		    	// Reset retry counter on successful connection
+		    	retry_attempts[instance_id] = 0;
+		    	connection_locks[instance_id] = false;
+		    	console.log("Connection opened successfully for:", instance_id);
+		    	
+		    	// Reload WASocket
+		    	console.log("OPEN", "STEP 1", WA.user);			    	if(WA.user.name == undefined){
 			    		WA.user.name = Common.get_phone(WA.user.id);
 			    	}
 
@@ -1312,6 +1358,39 @@ const WAZIPER = {
 		/*Create WhatsApp stats for user*/
 		var wa_stats = await Common.db_get("sp_whatsapp_stats", [ { team_id: team_id } ]);
 		if(!wa_stats) await Common.db_insert_stats(team_id);
+	},
+	
+	cleanup_session: async function(instance_id, remove_files = true){
+		try {
+			if(sessions[instance_id]){
+				// Safely close WebSocket
+				try {
+					if (sessions[instance_id].ws && sessions[instance_id].ws.readyState === sessions[instance_id].ws.OPEN) {
+						console.log("Closing WebSocket for:", instance_id);
+						sessions[instance_id].end();
+						await Common.sleep(1000); // Wait for graceful close
+					}
+				} catch (closeError) {
+					console.log("Error closing WebSocket (ignoring):", closeError.message);
+				}
+				
+				// Clear session data
+				delete sessions[instance_id];
+				delete chatbots[instance_id];
+				delete bulks[instance_id];
+			}
+			
+			if (remove_files) {
+				var SESSION_PATH = session_dir + instance_id;
+				if (fs.existsSync(SESSION_PATH)) {
+					rimraf.sync(SESSION_PATH);
+				}
+			}
+			
+			console.log("Session cleanup completed for:", instance_id);
+		} catch (error) {
+			console.error("Error during cleanup:", error);
+		}
 	}
 }
 
